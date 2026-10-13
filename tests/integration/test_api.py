@@ -8,8 +8,8 @@ from pyforge.storage.memory_repository import MemoryRepository
 
 def make_client():
     manager = JobManager(repository=MemoryRepository())
-    app = create_app(manager,api_key="test-secret")
-    return TestClient(app,headers={"X-API-Key": "test-secret"},)
+    app = create_app(manager,api_key="test-admin",read_only_api_key="test-reader")
+    return TestClient(app,headers={"X-API-Key": "test-admin"},)
 
 
 def test_health_endpoint():
@@ -128,3 +128,73 @@ def test_invalid_api_key_is_rejected():
     response = client.get("/jobs")
 
     assert response.status_code == 401
+    
+
+def test_reader_can_list_jobs():
+    app = create_app(
+        JobManager(repository=MemoryRepository()),
+        api_key="test-admin",
+        readonly_api_key="test-reader",
+    )
+    client = TestClient(
+        app,
+        headers={"X-API-Key": "test-reader"},
+    )
+
+    response = client.get("/jobs")
+
+    assert response.status_code == 200
+
+
+def test_reader_cannot_create_jobs():
+    app = create_app(
+        JobManager(repository=MemoryRepository()),
+        api_key="test-admin",
+        readonly_api_key="test-reader",
+    )
+    client = TestClient(
+        app,
+        headers={"X-API-Key": "test-reader"},
+    )
+
+    response = client.post(
+        "/jobs",
+        json={
+            "name": "hello",
+            "command": ["python3", "-c", "print('hello')"],
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_reader_cannot_execute_jobs():
+    app = create_app(
+        JobManager(repository=MemoryRepository()),
+        api_key="test-admin",
+        readonly_api_key="test-reader",
+    )
+    client = TestClient(
+        app,
+        headers={"X-API-Key": "test-reader"},
+    )
+
+    response = client.post("/jobs/some-id/run")
+
+    assert response.status_code == 403
+
+
+def test_reader_cannot_delete_jobs():
+    app = create_app(
+        JobManager(repository=MemoryRepository()),
+        api_key="test-admin",
+        readonly_api_key="test-reader",
+    )
+    client = TestClient(
+        app,
+        headers={"X-API-Key": "test-reader"},
+    )
+
+    response = client.delete("/jobs/some-id")
+
+    assert response.status_code == 403
