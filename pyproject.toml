@@ -1,0 +1,19 @@
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyforge"
+version = "0.4.0"
+description = "A Python job execution and automation platform"
+requires-python = ">=3.10"
+
+[project.scripts]
+pyforge = "pyforge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
