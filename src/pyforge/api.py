@@ -16,6 +16,16 @@ from pyforge.plugins import create_default_registry
 from pyforge.storage.sqlite_repository import SQLiteRepository
 from dotenv import load_dotenv
 from dataclasses import dataclass
+from pyforge.domain.schedule import (
+    Schedule,
+    ScheduleOccurrence,
+    utc_now,
+)
+from pyforge.storage.schedule_repository import ScheduleRepository
+from pyforge.exceptions import ScheduleNotFoundError, ScheduleError
+from pyforge.scheduler.service import SchedulerService 
+from pyforge.storage.sqlite_schedule_repository import SQLiteScheduleRepository
+
 
 class CreateJobRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -23,6 +33,12 @@ class CreateJobRequest(BaseModel):
     timeout: float | None = Field(default=30.0, gt=0)
     metadata: dict[str, str] = Field(default_factory=dict)
 
+class CreateScheduleRequest(BaseModel):
+    job_id: str = Field(min_length=1)
+    interval_seconds: float = Field(
+        gt=0,
+        le=31_536_000,
+    )
 
 def serialize_job(job: Job) -> dict[str, Any]:
     return {
@@ -48,6 +64,42 @@ def serialize_result(result) -> dict[str, Any]:
         "error": result.error,
     }
 
+def serialize_schedule(schedule: Schedule) -> dict:
+    return {
+        "id": schedule.id,
+        "job_id": schedule.job_id,
+        "interval_seconds": schedule.interval_seconds,
+        "next_run_at": schedule.next_run_at.isoformat(),
+        "enabled": schedule.enabled,
+        "created_at": schedule.created_at.isoformat(),
+        "last_run_at": (
+            schedule.last_run_at.isoformat()
+            if schedule.last_run_at else None
+        ),
+        "missed_runs": schedule.missed_runs,
+    }
+
+
+def serialize_occurrence(
+    occurrence: ScheduleOccurrence,
+) -> dict:
+    return {
+        "id": occurrence.id,
+        "schedule_id": occurrence.schedule_id,
+        "job_id": occurrence.job_id,
+        "scheduled_for": occurrence.scheduled_for.isoformat(),
+        "status": occurrence.status.value,
+        "started_at": (
+            occurrence.started_at.isoformat()
+            if occurrence.started_at else None
+        ),
+        "finished_at": (
+            occurrence.finished_at.isoformat()
+            if occurrence.finished_at else None
+        ),
+        "error": occurrence.error,
+    }
+
 load_dotenv()
 @dataclass(frozen=True)
 class Principal:
@@ -58,6 +110,7 @@ def create_app(
     api_key: str | None = None,
     read_only_api_key: str | None = None,
     readonly_api_key: str | None = None,
+    schedule_repository: ScheduleRepository | None = None,
 ) -> FastAPI:
     if read_only_api_key is not None and readonly_api_key is not None:
         raise ValueError("Specify only one read-only API key argument")
@@ -71,6 +124,27 @@ def create_app(
     job_manager = manager or JobManager(
         repository=SQLiteRepository("pyforge.db")
     )
+    schedule_repo = (
+    schedule_repository
+    if schedule_repository is not None
+    else SQLiteScheduleRepository("pyforge.db")
+    )
+
+    scheduler = SchedulerService(
+    manager=job_manager,
+    repository=schedule_repo,
+    )
+
+    app.state.scheduler = scheduler
+    @app.on_event("startup")
+    async def start_scheduler():
+        await scheduler.start()
+
+
+    @app.on_event("shutdown")
+    async def stop_scheduler():
+        await scheduler.stop()
+
 
     configured_api_key = (
         api_key if api_key is not None
@@ -122,8 +196,8 @@ def create_app(
 
         return check_permission
 
-    all_permissions = frozenset({"jobs:read","jobs:create","jobs:execute","jobs:delete",})
-    reader_permissions = frozenset({"jobs:read",})
+    all_permissions = frozenset({"jobs:read","jobs:create","jobs:execute","jobs:delete","schedules:read","schedules:create","schedules:manage",})
+    reader_permissions = frozenset({"jobs:read","schedules:read",})
     credential_principals = []
     if configured_api_key:
         credential_principals.append((configured_api_key,Principal(name="admin",permissions=all_permissions,),))
@@ -235,6 +309,131 @@ def create_app(
             ) from exc
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+    @app.post(
+        "/schedules",
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[
+            Depends(require_permission("schedules:create"))
+        ],
+    )
+    def create_schedule(request: CreateScheduleRequest):
+        try:
+            schedule = scheduler.create_interval_schedule(
+                job_id=request.job_id,
+                interval_seconds=request.interval_seconds,
+            )
+            return serialize_schedule(schedule)
+        except JobNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail=str(exc)
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=str(exc)
+            ) from exc
+
+    @app.get(
+        "/schedules",
+        dependencies=[
+            Depends(require_permission("schedules:read"))
+        ],
+    )
+    def list_schedules():
+        return [
+            serialize_schedule(item)
+            for item in scheduler.list_schedules()
+        ]
+
+    @app.get(
+        "/schedules/{schedule_id}",
+        dependencies=[
+            Depends(require_permission("schedules:read"))
+        ],
+    )
+    def get_schedule(schedule_id: str):
+        try:
+            return serialize_schedule(
+                scheduler.get_schedule(schedule_id)
+            )
+        except ScheduleNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail=str(exc)
+            ) from exc
+
+    @app.get(
+        "/schedules/{schedule_id}/occurrences",
+        dependencies=[
+            Depends(require_permission("schedules:read"))
+        ],
+    )
+    def list_occurrences(schedule_id: str):
+        try:
+            return [
+                serialize_occurrence(item)
+                for item in scheduler.list_occurrences(
+                    schedule_id
+                )
+            ]
+        except ScheduleNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail=str(exc)
+            ) from exc
+
+    @app.post(
+        "/schedules/{schedule_id}/enable",
+        dependencies=[
+            Depends(require_permission("schedules:manage"))
+        ],
+    )
+    def enable_schedule(schedule_id: str):
+        try:
+            return serialize_schedule(
+                scheduler.set_enabled(schedule_id, True)
+            )
+        except ScheduleNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail=str(exc)
+            ) from exc
+
+    @app.post(
+        "/schedules/{schedule_id}/disable",
+        dependencies=[
+            Depends(require_permission("schedules:manage"))
+        ],
+    )
+    def disable_schedule(schedule_id: str):
+        try:
+            return serialize_schedule(
+                scheduler.set_enabled(schedule_id, False)
+            )
+        except ScheduleNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail=str(exc)
+            ) from exc
+
+    @app.delete(
+        "/schedules/{schedule_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        dependencies=[
+            Depends(require_permission("schedules:manage"))
+        ],
+    )
+    def delete_schedule(schedule_id: str):
+        try:
+            scheduler.delete_schedule(schedule_id)
+        except ScheduleNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail=str(exc)
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409, detail=str(exc)
+            ) from exc
+
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 
     return app
 

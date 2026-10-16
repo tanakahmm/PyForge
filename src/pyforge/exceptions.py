@@ -24,3 +24,10 @@ class PluginNotFoundError(PluginError):
 
 class PluginRegistrationError(PluginError):
     """Raised when a plugin cannot be registered."""
+
+class ScheduleNotFoundError(PyForgeError):
+    """Raised when a requested schedule does not exist."""
+
+
+class ScheduleError(PyForgeError):
+    """Raised when a scheduling operation fails."""
