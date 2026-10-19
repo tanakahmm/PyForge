@@ -25,6 +25,7 @@ from pyforge.storage.schedule_repository import ScheduleRepository
 from pyforge.exceptions import ScheduleNotFoundError, ScheduleError
 from pyforge.scheduler.service import SchedulerService 
 from pyforge.storage.sqlite_schedule_repository import SQLiteScheduleRepository
+from contextlib import asynccontextmanager
 
 
 class CreateJobRequest(BaseModel):
@@ -121,30 +122,33 @@ def create_app(
         version="0.5.0",
     )
 
-    job_manager = manager or JobManager(
-        repository=SQLiteRepository("pyforge.db")
+    job_manager = (
+        manager if manager is not None
+        else JobManager(SQLiteRepository("pyforge.db"))
     )
     schedule_repo = (
-    schedule_repository
-    if schedule_repository is not None
-    else SQLiteScheduleRepository("pyforge.db")
+        schedule_repository
+        if schedule_repository is not None
+        else SQLiteScheduleRepository("pyforge.db")
     )
 
     scheduler = SchedulerService(
-    manager=job_manager,
-    repository=schedule_repo,
+        manager=job_manager,
+        repository=schedule_repo,
     )
 
-    app.state.scheduler = scheduler
-    @app.on_event("startup")
-    async def start_scheduler():
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         await scheduler.start()
+        try:
+            yield
+        finally:
+            await scheduler.stop()
 
+    app = FastAPI(lifespan=lifespan)
 
-    @app.on_event("shutdown")
-    async def stop_scheduler():
-        await scheduler.stop()
-
+    app.state.scheduler = scheduler
+    app.state.manager = job_manager
 
     configured_api_key = (
         api_key if api_key is not None
