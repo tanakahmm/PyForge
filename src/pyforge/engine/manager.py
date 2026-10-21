@@ -1,4 +1,3 @@
-
 from pyforge.domain.job import Job
 from pyforge.domain.result import JobResult
 from pyforge.engine.executor import Executor
@@ -6,7 +5,11 @@ from pyforge.storage.memory_repository import MemoryRepository
 from pyforge.storage.repository import JobRepository
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
+import logging
+from time import perf_counter
+from pyforge.observability.metrics import metrics
 
+logger = logging.getLogger(__name__)
 class JobManager:
     def __init__(
         self,
@@ -30,6 +33,11 @@ class JobManager:
             timeout=timeout,
             metadata={} if metadata is None else metadata,
         )
+        logger.info(
+                "Job created job_id=%s name=%s",
+                job.id,
+                job.name,
+            )
         self._repository.save_job(job)
         return job
 
@@ -42,17 +50,48 @@ class JobManager:
     def remove_job(self, job_id: str) -> None:
         self._repository.delete_job(job_id)
 
-    def execute_job(
-        self, job_id: str, executor: Executor
-    ) -> JobResult:
+    def execute_job(self, job_id: str, executor: Executor) -> JobResult:
         job = self._repository.get_job(job_id)
-        result = executor.execute(job)
+        started=perf_counter()
 
-        # Persist both the final job status and its result.
-        self._repository.save_job(job)
-        self._repository.save_result(result)
+        logger.info("Job execution started job_id=%s", job_id)
 
-        return result
+        try:
+            result = executor.execute(job)
+
+            self._repository.save_job(job)
+            self._repository.save_result(result)
+
+            duration=perf_counter()-started
+            metrics.record_job(result.status.value, duration)
+            if result.status.value == "success":
+                logger.info(
+                    "Job execution completed job_id=%s status=%s duration=%.4f",
+                    job_id,
+                    result.status.value,
+                    duration,
+                )
+            else:
+                logger.warning(
+                    "Job execution finished unsuccessfully "
+                    "job_id=%s status=%s duration=%.4f",
+                    job_id,
+                    result.status.value,
+                    duration,
+                )
+
+            return result
+            metrics.record_job(result.status.value, perf_counter()- started,)
+
+        except Exception:
+            duration=perf_counter()-started
+            logger.exception(
+                "Job execution raised an exception job_id=%s duration=%.4f",
+                job_id,
+                duration,
+            )
+            metrics.record_job("exception", perf_counter()- started,)
+            raise
 
     def execute_jobs_concurrently(
         self,

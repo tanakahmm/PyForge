@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 import os
 import secrets
-from fastapi import FastAPI, HTTPException, Response, status ,Depends ,Header
+from fastapi import FastAPI, HTTPException, Response, status ,Depends ,Header ,Request
 from pydantic import BaseModel, Field
 
 from pyforge.domain.job import Job
@@ -26,6 +26,14 @@ from pyforge.exceptions import ScheduleNotFoundError, ScheduleError
 from pyforge.scheduler.service import SchedulerService 
 from pyforge.storage.sqlite_schedule_repository import SQLiteScheduleRepository
 from contextlib import asynccontextmanager
+from pyforge.observability.logging_config import configure_logging
+import logging
+from time import perf_counter
+from uuid import uuid4
+from pyforge.observability.context import request_id_var
+from pyforge.observability.metrics import metrics
+from pyforge.observability.logging_config import configure_logging
+
 
 
 class CreateJobRequest(BaseModel):
@@ -121,7 +129,7 @@ def create_app(
         description="HTTP API for managing and executing jobs.",
         version="0.5.0",
     )
-
+    configure_logging()
     job_manager = (
         manager if manager is not None
         else JobManager(SQLiteRepository("pyforge.db"))
@@ -146,6 +154,48 @@ def create_app(
             await scheduler.stop()
 
     app = FastAPI(lifespan=lifespan)
+    logger = logging.getLogger(__name__)
+
+    @app.middleware("http")
+    async def observe_request(request: Request, call_next):
+        request_id = uuid4().hex
+        token = request_id_var.set(request_id)
+        started = perf_counter()
+        status_code = 500
+
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            response.headers["X-Request-ID"] = request_id
+            return response
+
+        except Exception:
+            logger.exception(
+                "HTTP request raised an exception method=%s path=%s",
+                request.method,
+                request.url.path,
+            )
+            raise
+
+        finally:
+            duration = perf_counter() - started
+
+            metrics.record_request(
+                request.method,
+                status_code,
+                duration,
+            )
+
+            logger.info(
+                "HTTP request completed method=%s path=%s "
+                "status=%s duration_seconds=%.4f",
+                request.method,
+                request.url.path,
+                status_code,
+                duration,
+            )
+
+            request_id_var.reset(token)
 
     app.state.scheduler = scheduler
     app.state.manager = job_manager
@@ -438,6 +488,29 @@ def create_app(
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+
+    @app.get(
+    "/metrics",dependencies=[Depends(require_permission("jobs:read"))],)
+    async def get_metrics():
+        return Response(
+            content=metrics.render_prometheus(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+    @app.get("/ready")
+    async def readiness_check():
+        try:
+            job_manager.list_jobs()
+            scheduler.list_schedules()
+            return {"status": "ready"}
+
+        except Exception:
+            logger.exception("Readiness check failed")
+
+            raise HTTPException(
+                status_code=503,
+                detail="Application dependencies are unavailable",
+            )
 
     return app
 

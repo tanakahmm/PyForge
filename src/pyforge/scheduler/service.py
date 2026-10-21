@@ -9,12 +9,13 @@ from pyforge.engine.sync_executor import SyncExecutor
 from pyforge.exceptions import ScheduleNotFoundError
 from pyforge.engine.manager import JobManager
 from pyforge.storage.schedule_repository import ScheduleRepository
+import logging
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
-
+logger = logging.getLogger(__name__)
 class SchedulerService:
     def __init__(
         self,
@@ -47,6 +48,7 @@ class SchedulerService:
         self._busy_schedule_ids: set[str] = set()
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._stopping = False
+        logger = logging.getLogger(__name__)
 
     def create_interval_schedule(
         self,
@@ -175,6 +177,7 @@ class SchedulerService:
         self.repository.recover_incomplete(self.clock())
         self._stopping = False
         self._loop_task = asyncio.create_task(self._run_loop())
+        logger.info("Scheduler started")
 
     async def _run_loop(self) -> None:
         while not self._stopping:
@@ -188,9 +191,11 @@ class SchedulerService:
             self._loop_task.cancel()
             try:
                 await self._loop_task
+                logger.info("Scheduler shutdown requested")
             except asyncio.CancelledError:
                 pass
             self._loop_task = None
 
         # Graceful shutdown: let already-dispatched jobs finish.
         await self.wait_for_idle()
+        logger.info("Scheduler stopped")
