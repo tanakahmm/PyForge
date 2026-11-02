@@ -1,273 +1,297 @@
 # PyForge
 
-**A Python-powered job execution and automation platform.**
+**A Python-powered job execution, automation, and scheduling platform.**
 
-PyForge is a backend engineering project for creating, executing, tracking, and persisting jobs through a modular execution engine. It combines a command-line interface, pluggable executors, concurrency utilities, TCP networking, SQLite persistence, and a REST API built with FastAPI.
+PyForge is a backend and systems engineering project for creating, executing, tracking, scheduling, and persisting jobs. It provides multiple interfaces for interacting with jobs and explores core Python engineering concepts including process execution, concurrency, asynchronous programming, networking, persistence, API design, authentication, authorization, scheduling, observability, and automated testing.
 
-The project is being developed incrementally, with automated tests and a focus on Python fundamentals, clean architecture, concurrency, networking, and service design.
+The project was developed incrementally through versioned milestones, with each stage introducing a new engineering concept and validating it through automated tests.
 
-## Features
+---
 
-### Job management
-- Create jobs with a name, command, timeout, and metadata.
-- Track job lifecycle states such as pending, running, success, failure, timeout, and cancellation.
-- Retrieve, list, and delete jobs.
-- Store execution results, including standard output, standard error, exit code, timestamps, and errors.
+## What is PyForge?
 
-### Execution engine
-- Synchronous operating-system command execution.
-- Timeout and missing-command error handling.
-- Pluggable executor architecture with a registry.
-- Thread-based execution of multiple jobs.
-- Process-pool runner for parallel Python callables.
-- Async task runner with bounded concurrency.
+At its core, PyForge manages the lifecycle of executable jobs.
 
-### Persistence
-- Repository abstraction separating storage from business logic.
-- In-memory repository for testing and lightweight use.
-- SQLite repository for persistent job and result storage.
-- JSON serialization for command arguments and metadata.
-- Parameterized SQL queries and relational job/result storage.
-
-### Command-line interface
-- Create, list, inspect, execute, retrieve results, and delete jobs.
-- Execute multiple jobs concurrently.
-- Select an executor through the plugin architecture.
-- Configure the SQLite database path.
-
-### Networking
-- Asynchronous TCP server and client.
-- Newline-delimited JSON message protocol.
-- Message-size limits and protocol validation.
-- Ping and echo commands.
-- Error responses for invalid messages and unsupported commands.
-
-### REST API
-- FastAPI application with automatically generated OpenAPI documentation.
-- Endpoints for creating, listing, retrieving, executing, and deleting jobs.
-- Pydantic request validation.
-- Health endpoint.
-- API-key authentication for job-management routes.
-- Dependency-injected manager for isolated integration tests.
-
-## Architecture
+A user can provide a command such as:
 
 ```text
-                         Clients
-                    CLI / HTTP clients
-                            |
-               +------------+------------+
-               |                         |
-          CLI interface             FastAPI
-               |                         |
-               +------------+------------+
-                            |
-                        JobManager
-                            |
-             +--------------+--------------+
-             |                             |
-       Executor plugins               Repository
-             |                             |
-     +-------+--------+             +------+------+
-     |       |        |             |             |
-   Sync    Thread   Async/Process  Memory        SQLite
-     |
- OS command execution
-
-Additional module:
-TCP client/server with JSON message protocol
+["python3", "-c", "print('Hello from PyForge')"]
 ```
 
-The components have distinct responsibilities:
+PyForge can then:
 
-- **Domain models** represent jobs, statuses, and results.
-- **JobManager** coordinates job operations and persistence.
-- **Executors** perform work.
-- **Repositories** store and retrieve jobs and results.
-- **CLI and API layers** expose functionality to users and clients.
+1. Create and validate a job.
+2. Store the job in a repository.
+3. Execute the command through an executor.
+4. Capture standard output, standard error, exit status, timing, and errors.
+5. Persist the execution result.
+6. Expose the job and its result through the CLI or REST API.
+7. Execute multiple jobs concurrently or schedule jobs for future execution.
 
-## Technology stack
+---
 
-- Python 3.10+
-- FastAPI and Pydantic
-- Uvicorn
-- SQLite
-- `subprocess`
-- `concurrent.futures`
-- `asyncio`
-- TCP sockets and newline-delimited JSON
-- pytest
-- Git and GitHub
+# Features
 
-## Project milestones
+## Job management
 
-| Version | Milestone | Implemented scope |
-|---|---|---|
-| V0 | Domain foundation | Job and result models, job statuses, base exceptions |
-| V1 | Execution engine | Synchronous command execution and execution results |
-| V2 | Serialization | JSON-compatible representation of job data |
-| V3 | Persistence | Repository abstraction, in-memory storage, SQLite storage |
-| V4 | CLI | Job lifecycle commands and database configuration |
-| V5 | Plugin architecture | Executor plugin interface, registry, built-in executor, plugin discovery |
-| V6 | Thread concurrency | Concurrent job execution and `run-many` |
-| V7 | Process execution utilities | Process-pool runner for Python callables |
-| V8 | Async execution utilities | Async task runner with a concurrency limit |
-| V9 | Networking | TCP server/client, JSON protocol, message validation |
-| V10 | REST API | FastAPI endpoints, request validation, integration tests |
-| V11 | Authentication | API-key protection for job-management endpoints |
+- Create jobs with a name, command, timeout, and metadata.
+- Track job lifecycle and execution states.
+- Retrieve individual jobs and list stored jobs.
+- Delete jobs and associated execution data.
+- Store execution results including standard output, standard error, exit codes, timestamps, and errors.
 
-These milestones describe the current development history. Passing tests verifies implemented behavior, but does not by itself mean the platform is production-hardened.
+## Execution engine
 
-## Requirements
+- Execute operating-system commands synchronously.
+- Handle successful execution, command failures, missing commands, and timeouts.
+- Use a pluggable executor architecture.
+- Register and create executors through a plugin registry.
+- Execute multiple jobs concurrently using worker threads.
 
-- Python 3.10 or later
-- pip
-- Git
+## Concurrency utilities
 
-## Setup
+PyForge explores multiple Python concurrency models:
 
-Clone the repository:
+- Thread-based concurrent job execution.
+- Process-pool execution for Python callables.
+- Async task execution with bounded concurrency.
+- Ordered result collection.
+- Validation of concurrency and worker limits.
 
-```bash
-git clone <YOUR_GITHUB_REPOSITORY_URL>
-cd forge
-```
+## Persistence
 
-Create and activate a virtual environment:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Install the runtime and test dependencies:
-
-```bash
-python -m pip install fastapi "uvicorn[standard]" python-dotenv httpx pytest
-```
-
-If the project dependencies are declared in `pyproject.toml`, you can also install the project itself with:
-
-```bash
-python -m pip install -e .
-```
-
-Configure your local environment:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and replace the placeholder with a newly generated secret. Never commit the real `.env` file.
-
-## Running tests
-
-Run the complete test suite:
-
-```bash
-PYTHONPATH=src python -m pytest -v
-```
-
-Run API integration tests:
-
-```bash
-PYTHONPATH=src python -m pytest tests/integration/test_api.py -v
-```
-
-Run TCP integration tests:
-
-```bash
-PYTHONPATH=src python -m pytest tests/integration/test_tcp_server.py -v
-```
-
-Run networking protocol unit tests:
-
-```bash
-PYTHONPATH=src python -m pytest tests/unit/test_network_protocol.py -v
-```
-
-The test suite includes unit and integration tests for the project's domain, storage, execution, concurrency, networking, and API components.
-
-## Running the REST API
-
-Ensure your `.env` file contains a configured `PYFORGE_API_KEY`.
-
-Start the server:
-
-```bash
-PYTHONPATH=src python -m uvicorn pyforge.api:app --reload
-```
-
-Open the interactive API documentation:
-
-- Swagger UI: http://127.0.0.1:8000/docs
-- OpenAPI schema: http://127.0.0.1:8000/openapi.json
-- Health check: http://127.0.0.1:8000/health
-
-### Example requests
-
-Health check:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-List jobs with authentication:
-
-```bash
-curl -H "X-API-Key: YOUR_API_KEY" \
-  http://127.0.0.1:8000/jobs
-```
-
-Create a job:
-
-```bash
-curl -X POST http://127.0.0.1:8000/jobs \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -d '{
-    "name": "hello",
-    "command": ["python3", "-c", "print(\"Hello from PyForge\")"],
-    "timeout": 10
-  }'
-```
-
-Use the returned job ID to execute it:
-
-```bash
-curl -X POST \
-  "http://127.0.0.1:8000/jobs/YOUR_JOB_ID/run" \
-  -H "X-API-Key: YOUR_API_KEY"
-```
+- Repository abstraction separating storage from application logic.
+- In-memory repository for lightweight use and testing.
+- SQLite repository for persistent storage.
+- Persistent job and execution-result storage.
+- JSON serialization for structured fields.
+- Parameterized SQL queries.
+- Repository behavior tested across application restarts.
 
 ## Command-line interface
 
-Run commands from the project root with the source directory on the Python path:
+The CLI supports:
 
-```bash
-PYTHONPATH=src python -m pyforge --help
+- Job creation.
+- Listing jobs.
+- Inspecting jobs.
+- Executing jobs.
+- Retrieving execution results.
+- Deleting jobs.
+- Concurrent execution workflows.
+- Database-path configuration.
+
+## Networking
+
+PyForge includes an asynchronous TCP networking module with:
+
+- TCP server and client support.
+- Newline-delimited JSON message framing.
+- Message-size limits.
+- JSON and protocol validation.
+- Ping and echo commands.
+- Error handling for malformed or unsupported messages.
+
+## REST API
+
+The FastAPI application provides:
+
+- Job creation and validation.
+- Job retrieval and listing.
+- Job execution.
+- Result retrieval.
+- Job deletion.
+- Health and service endpoints.
+- OpenAPI documentation.
+- Dependency-injected application components for isolated tests.
+
+## Security
+
+PyForge includes application-level security concepts such as:
+
+- API-key authentication for protected endpoints.
+- Authentication dependencies.
+- Secure API-key comparison.
+- Authorization and permission concepts for controlled operations.
+- Environment-based configuration for secrets.
+
+> PyForge can execute operating-system commands. It should be treated as a privileged development tool and should not be exposed to untrusted users without additional security controls.
+
+## Scheduling
+
+The scheduling subsystem introduces time-based job execution concepts:
+
+- Create and manage recurring schedules.
+- Track the next execution time.
+- Represent individual schedule occurrences.
+- Use timezone-aware UTC timestamps.
+- Track occurrence states and execution outcomes.
+- Enable and disable schedules.
+- Record missed or interrupted executions.
+
+## Observability
+
+PyForge includes operational concepts for understanding application behavior:
+
+- Structured application logging.
+- Request and correlation identifiers.
+- Health and readiness checks.
+- Metrics and execution visibility.
+- Error reporting and diagnostic information.
+
+---
+
+# Architecture
+
+```text
+                              Clients
+                 CLI / HTTP Clients / Scheduler
+                              |
+                 +------------+------------+
+                 |                         |
+                CLI                     FastAPI
+                 |                         |
+                 +------------+------------+
+                              |
+                          JobManager
+                              |
+              +---------------+---------------+
+              |                               |
+          Executors                        Repository
+              |                               |
+       Plugin Registry                 +-----+------+
+              |                        |            |
+        Sync Executor              Memory        SQLite
+              |
+         subprocess
+              |
+       Operating System
+              |
+          JobResult
+
+
+Additional components:
+
+Scheduler
+    |
+Schedule -> Occurrence -> Job Execution
+
+Networking
+    |
+TCP Client <-> JSON Protocol <-> TCP Server
+
+Observability
+    |
+Logging + Metrics + Health / Readiness
 ```
 
-The CLI supports job creation, listing, inspection, execution, result retrieval, deletion, and concurrent execution. Use the CLI help output to inspect the available arguments and commands.
+## Architectural responsibilities
 
-## Project structure
+### Domain layer
+
+Represents the core concepts of the application:
+
+- Jobs.
+- Execution results.
+- Statuses.
+- Schedules.
+- Schedule occurrences.
+- Domain-specific errors.
+
+### JobManager
+
+Coordinates application workflows.
+
+It manages operations such as:
+
+- Creating jobs.
+- Retrieving jobs.
+- Executing jobs.
+- Persisting updated job state.
+- Storing execution results.
+- Coordinating concurrent execution.
+
+### Executors
+
+Executors are responsible for performing work.
+
+The executor abstraction allows execution strategies to be extended without tightly coupling the application to one implementation.
+
+### Repositories
+
+Repositories separate application logic from storage implementation.
+
+The manager interacts with a repository abstraction rather than directly writing database queries.
+
+### Interfaces
+
+The CLI and REST API expose the application to users and external clients while keeping business logic inside the application layers.
+
+---
+
+# Technology Stack
+
+- **Python 3.10+**
+- **FastAPI**
+- **Pydantic**
+- **Uvicorn**
+- **SQLite**
+- **pytest**
+- **subprocess**
+- **concurrent.futures**
+- **asyncio**
+- **TCP sockets**
+- **JSON**
+- **Git and GitHub**
+
+---
+
+# Project Milestones
+
+| Version | Milestone | Implemented scope |
+|---|---|---|
+| V0 | Domain foundation | Job models, execution results, statuses, and domain exceptions |
+| V1 | Execution engine | Synchronous command execution and result capture |
+| V2 | Serialization | JSON-compatible serialization of jobs and results |
+| V3 | Persistence | Repository abstraction, in-memory storage, and SQLite persistence |
+| V4 | CLI | Command-line job management and execution workflows |
+| V5 | Plugin architecture | Executor abstraction, registry, and extensible execution strategies |
+| V6 | Thread concurrency | Concurrent job execution with worker threads |
+| V7 | Process execution | Process-pool utilities for Python callables |
+| V8 | Async execution | Async task runner with bounded concurrency |
+| V9 | Networking | TCP client/server and newline-delimited JSON protocol |
+| V10 | REST API | FastAPI endpoints, validation, and API integration tests |
+| V11 | Authentication | API-key authentication and protected API routes |
+| V12 | Authorization and application security | Permission-oriented access control and security concepts |
+| V13 | Scheduling | Recurring schedules, occurrences, and time-based job execution |
+| V14 | Observability | Logging, correlation, metrics, health, and readiness concepts |
+| V15 | Reliability and project hardening | Error handling, validation, resilience, and final engineering improvements |
+
+The milestones represent the learning and implementation journey of the project. Passing automated tests verifies expected behavior but does not by itself make the platform production-ready.
+
+---
+
+# Project Structure
 
 ```text
 forge/
 ├── src/
 │   └── pyforge/
-│       ├── domain/
-│       ├── engine/
-│       ├── networking/
-│       ├── plugins/
-│       ├── storage/
-│       ├── api.py
-│       ├── cli.py
-│       ├── manager.py
-│       └── __main__.py
+│       ├── domain/           # Core domain models and errors
+│       ├── engine/           # Job execution and concurrency
+│       ├── networking/       # TCP client, server, and protocol
+│       ├── plugins/          # Executor plugin architecture
+│       ├── scheduling/       # Scheduling and occurrence management
+│       ├── storage/          # Repository implementations
+│       ├── api.py            # FastAPI application
+│       ├── cli.py            # Command-line interface
+│       ├── manager.py        # Application orchestration
+│       └── __main__.py       # Package entry point
+│
 ├── tests/
 │   ├── unit/
 │   └── integration/
+│
 ├── examples/
 ├── pyproject.toml
 ├── .env.example
@@ -275,31 +299,276 @@ forge/
 └── README.md
 ```
 
-The directory listing above is representative; the exact files may evolve as development continues.
+The exact project structure may evolve as the application develops.
 
-## Security notes
+---
 
-PyForge can execute operating-system commands. Treat this as a privileged capability.
+# Getting Started
 
-- Keep the development API bound to `127.0.0.1`.
-- Never commit API keys or other credentials.
-- API-key authentication is not a substitute for authorization, process isolation, or resource limits.
-- Do not expose the service to untrusted users or the public internet without further security controls.
-- Only load trusted external executor plugins.
+## Requirements
 
-## Roadmap
+- Python 3.10 or later.
+- pip.
+- Git.
 
-Planned improvements include:
+## Clone the repository
 
-- Fine-grained authorization and role/permission management.
-- A React and TypeScript dashboard for visual job management.
-- Scheduling and recurring jobs.
-- Structured logging, metrics, and operational observability.
-- Packaging, Docker, and CI/CD.
-- Resource limits, process isolation, resilience, and production hardening.
+```bash
+git clone <YOUR_GITHUB_REPOSITORY_URL>
+cd forge
+```
 
-## Development philosophy
+## Create a virtual environment
 
-PyForge is built milestone by milestone. Each milestone introduces a concrete capability, reinforces Python engineering concepts, and is validated with tests before further expansion.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-The goal is to understand not only how to use frameworks, but also how job execution, storage, concurrency, networking, API design, and service architecture fit together.
+## Install dependencies
+
+```bash
+python -m pip install fastapi "uvicorn[standard]" python-dotenv httpx pytest
+```
+
+If dependencies are declared in `pyproject.toml`, install the project in editable mode:
+
+```bash
+python -m pip install -e .
+```
+
+---
+
+# Configuration
+
+Create a local environment file:
+
+```bash
+cp .env.example .env
+```
+
+Configure the required values, including:
+
+```text
+PYFORGE_API_KEY=replace_with_a_secure_secret
+```
+
+Never commit a real `.env` file containing secrets.
+
+---
+
+# Running Tests
+
+Run the complete test suite:
+
+```bash
+PYTHONPATH=src python -m pytest -v
+```
+
+Run selected test groups:
+
+```bash
+PYTHONPATH=src python -m pytest tests/unit/ -v
+```
+
+```bash
+PYTHONPATH=src python -m pytest tests/integration/ -v
+```
+
+The project contains both unit and integration tests covering domain behavior, execution, persistence, concurrency, networking, API behavior, scheduling, and failure handling.
+
+---
+
+# Running the REST API
+
+Ensure the required environment variables are configured.
+
+Start the development server:
+
+```bash
+PYTHONPATH=src python -m uvicorn pyforge.api:app --reload
+```
+
+Useful endpoints include:
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
+- Health check: `http://127.0.0.1:8000/health`
+
+---
+
+# Example API Workflow
+
+## 1. Check service health
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+## 2. Create a job
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -d '{
+    "name": "hello",
+    "command": [
+      "python3",
+      "-c",
+      "print(\"Hello from PyForge\")"
+    ],
+    "timeout": 10
+  }'
+```
+
+The API returns a job object containing a unique job ID.
+
+## 3. Execute the job
+
+```bash
+curl -X POST \
+  "http://127.0.0.1:8000/jobs/YOUR_JOB_ID/run" \
+  -H "X-API-Key: YOUR_API_KEY"
+```
+
+## 4. Retrieve the result
+
+```bash
+curl \
+  -H "X-API-Key: YOUR_API_KEY" \
+  http://127.0.0.1:8000/jobs/YOUR_JOB_ID/result
+```
+
+The result contains information about the execution, including output, errors, and execution status.
+
+---
+
+# Command-Line Interface
+
+Run the CLI from the project root:
+
+```bash
+PYTHONPATH=src python -m pyforge --help
+```
+
+The CLI provides commands for managing jobs and inspecting execution behavior.
+
+Use the help output to see the commands and arguments available in your installed version.
+
+---
+
+# Security Notes
+
+PyForge is capable of executing operating-system commands.
+
+Keep the following considerations in mind:
+
+- Do not expose the service publicly without additional security controls.
+- Keep secrets out of version control.
+- Use environment variables for API keys and configuration.
+- Treat external executor plugins as trusted code.
+- Authentication alone does not provide process isolation or resource limits.
+- Production deployment would require additional sandboxing and operational controls.
+
+---
+
+# What I Learned
+
+PyForge was built as a practical systems and backend engineering project.
+
+The project explores how the following concepts connect:
+
+```text
+Python
+   |
+   +-- Object-oriented design
+   +-- Type hints
+   +-- Exceptions
+   +-- Dataclasses
+   +-- Testing
+   |
+Operating Systems
+   |
+   +-- Processes
+   +-- subprocess
+   +-- stdout / stderr
+   +-- Exit codes
+   +-- Timeouts
+   |
+Concurrency
+   |
+   +-- Threads
+   +-- Processes
+   +-- asyncio
+   |
+Networking
+   |
+   +-- TCP
+   +-- Client/server communication
+   +-- Message framing
+   +-- Protocol validation
+   |
+Backend Engineering
+   |
+   +-- REST APIs
+   +-- Authentication
+   +-- Authorization
+   +-- Persistence
+   +-- Scheduling
+   +-- Observability
+```
+
+The goal of PyForge was not simply to use frameworks, but to understand how these components interact inside a backend system.
+
+---
+
+# Future Improvements
+
+Potential future work includes:
+
+- Containerized deployment.
+- CI/CD pipelines.
+- Process sandboxing and resource limits.
+- Distributed workers.
+- More executor implementations.
+- Production-grade authentication.
+- Advanced scheduling policies.
+- External metrics backends.
+- Web-based dashboard.
+
+---
+
+# Development Philosophy
+
+PyForge was developed incrementally.
+
+Each version introduced a concrete engineering capability, followed by testing and debugging before moving to the next layer.
+
+The project demonstrates a progression from:
+
+```text
+Python fundamentals
+        ↓
+Command execution
+        ↓
+Persistence
+        ↓
+Architecture
+        ↓
+Concurrency
+        ↓
+Networking
+        ↓
+REST APIs
+        ↓
+Security
+        ↓
+Scheduling
+        ↓
+Observability
+        ↓
+Reliability
+```
+
+The objective is to understand not only how to write code, but how software components, operating systems, networks, storage, APIs, and application architecture work together.
